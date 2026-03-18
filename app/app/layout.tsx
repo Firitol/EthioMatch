@@ -1,6 +1,5 @@
 'use client';
 
-import { AuthProvider } from '@/app/auth-context';
 import { Navigation } from '@/components/navigation';
 
 export default function AppLayout({
@@ -9,11 +8,9 @@ export default function AppLayout({
   children: React.ReactNode;
 }) {
   return (
-    <AuthProvider>
+    <>
       <Navigation />
-      <main className="pt-0">
-        {children}
-      </main>
-    </AuthProvider>
+      <main>{children}</main>
+    </>
   );
 }
