@@ -5,12 +5,12 @@ import { useAuth } from '@/app/auth-context';
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Heart, MessageCircle, User, LogOut, Coins, Crown, Sparkles, Users } from 'lucide-react';
+import { Heart, MessageCircle, User, Coins, Crown, Sparkles, Users } from 'lucide-react';
 import { Database } from '@/lib/db';
 
 export default function AppHome() {
   const router = useRouter();
-  const { currentUser, isLoading, logout, refreshUser } = useAuth();
+  const { currentUser, isLoading, refreshUser } = useAuth();
   const [matchCount, setMatchCount] = useState(0);
   const [conversationCount, setConversationCount] = useState(0);
   const [showPremiumModal, setShowPremiumModal] = useState(false);
@@ -52,10 +52,6 @@ export default function AppHome() {
     return null;
   }
 
-  const handleLogout = () => {
-    logout();
-    router.push('/login');
-  };
 
   const handleUpgradePremium = () => {
     const updated = Database.upgradeToPremium(currentUser.id);
@@ -73,76 +69,6 @@ export default function AppHome() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-red-50 to-rose-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm">
-        <div className="max-w-6xl mx-auto px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Heart className="w-7 h-7 text-red-500 fill-red-500" />
-              <h1 className="text-xl font-bold text-gray-900">Ethiomatch</h1>
-            </div>
-
-            {/* Token/Premium Display */}
-            <div className="flex items-center gap-3">
-              {currentUser.isPremium ? (
-                <div className="flex items-center gap-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white px-3 py-1.5 rounded-full text-sm font-medium">
-                  <Crown className="w-4 h-4" />
-                  <span>Premium</span>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setShowPremiumModal(true)}
-                  className="flex items-center gap-1 bg-amber-100 text-amber-800 px-3 py-1.5 rounded-full text-sm font-medium hover:bg-amber-200 transition"
-                >
-                  <Coins className="w-4 h-4" />
-                  <span>{currentUser.tokens} tokens</span>
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Navigation */}
-          <nav className="flex items-center gap-1 mt-3 -mb-px overflow-x-auto">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => router.push('/app/discover')}
-              className="flex items-center gap-2 text-gray-700 hover:text-red-600 hover:bg-red-50"
-            >
-              <Heart className="w-4 h-4" />
-              <span>Discover</span>
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => router.push('/app/messages')}
-              className="flex items-center gap-2 text-gray-700 hover:text-red-600 hover:bg-red-50"
-            >
-              <MessageCircle className="w-4 h-4" />
-              <span>Messages</span>
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => router.push('/app/profile')}
-              className="flex items-center gap-2 text-gray-700 hover:text-red-600 hover:bg-red-50"
-            >
-              <User className="w-4 h-4" />
-              <span>Profile</span>
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleLogout}
-              className="flex items-center gap-2 text-gray-500 hover:text-red-600 hover:bg-red-50 ml-auto"
-            >
-              <LogOut className="w-4 h-4" />
-              <span className="hidden sm:inline">Logout</span>
-            </Button>
-          </nav>
-        </div>
-      </header>
-
       {/* Main Content */}
       <main className="max-w-6xl mx-auto px-4 py-8">
         {/* Welcome Section */}
