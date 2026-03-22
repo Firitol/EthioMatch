@@ -25,74 +25,143 @@ export default function MessagesPage() {
       return;
     }
 
-    // Load conversations
-    const allConversations = Database.getConversations();
+    const loadData = async () => {
+      try {
+        // Load conversations from API
+        const convResponse = await fetch(`/api/conversations?userId=${currentUser.id}`);
+        let userConversations: Conversation[] = [];
 
-    const userConversations = allConversations.filter(
-      (c) => c.participants[0] === currentUser.id || c.participants[1] === currentUser.id
-    );
+        if (convResponse.ok) {
+          const convData = await convResponse.json();
+          userConversations = convData;
+          setConversations(convData);
+        } else {
+          // Fallback to Database
+          const allConversations = Database.getConversations();
+          userConversations = allConversations.filter(
+            (c) => c.participants[0] === currentUser.id || c.participants[1] === currentUser.id
+          );
+          setConversations(userConversations);
+        }
 
-    setConversations(userConversations);
+        // Load other users
+        const users = Database.getUsers();
+        const userMap = new Map<string, User>();
 
-    // Load other users and unread counts
-    const users = Database.getUsers();
-    const userMap = new Map<string, User>();
-    const messages = Database.getMessages();
+        userConversations.forEach((conv) => {
+          const otherUserId = conv.participants[0] === currentUser.id ? conv.participants[1] : conv.participants[0];
+          const user = users.find((u) => u.id === otherUserId);
+          if (user) {
+            userMap.set(otherUserId, user);
+          }
+        });
 
-    const counts = new Map<string, number>();
-    userConversations.forEach((conv) => {
-      const otherUserId = conv.participants[0] === currentUser.id ? conv.participants[1] : conv.participants[0];
-      const user = users.find((u) => u.id === otherUserId);
-      if (user) {
-        userMap.set(otherUserId, user);
-      }
+        setOtherUsers(userMap);
 
-      const unreadCount = messages.filter(
-        (m) =>
-          m.conversationId === conv.id &&
-          m.receiverId === currentUser.id &&
-          !m.read
-      ).length;
-      counts.set(conv.id, unreadCount);
-    });
+        // Load liked users that have conversations (from liked matches)
+        const matchesResponse = await fetch(`/api/matches?userId=${currentUser.id}&status=liked`);
+        let likedMatches = [];
 
-    setOtherUsers(userMap);
-    setUnreadCounts(counts);
+        if (matchesResponse.ok) {
+          likedMatches = await matchesResponse.json();
+        } else {
+          // Fallback to Database
+          const allMatches = Database.getMatches();
+          likedMatches = allMatches.filter(
+            (m) => m.userId === currentUser.id && m.status === 'liked'
+          );
+        }
 
-    // Load matched users (mutual likes) that don't have conversations yet
-    const allMatches = Database.getMatches();
-    const allUsers = Database.getUsers();
+        // Get users from liked matches
+        const likedUsers = likedMatches
+          .map((match: any) => users.find((u) => u.id === match.matched_user_id || u.id === match.matchedUserId))
+          .filter((user) => {
+            if (!user) return false;
+            // Check if already in conversations
+            const hasConversation = userConversations.some(
+              (c) =>
+                (c.participants[0] === user.id && c.participants[1] === currentUser.id) ||
+                (c.participants[0] === currentUser.id && c.participants[1] === user.id)
+            );
+            return !hasConversation;
+          }) as User[];
 
-    // Find mutual matches
-    const mutualMatches = new Set<string>();
-    allMatches.forEach((match) => {
-      if (match.userId === currentUser.id && match.status === 'matched') {
-        mutualMatches.add(match.matchedUserId);
-      }
-      if (match.matchedUserId === currentUser.id && match.status === 'matched') {
-        mutualMatches.add(match.userId);
-      }
-    });
-
-    // Get matched users that aren't already in conversations
-    const matchedUsersList = Array.from(mutualMatches)
-      .map((userId) => allUsers.find((u) => u.id === userId))
-      .filter((user) => {
-        if (!user) return false;
-        const hasConversation = userConversations.some(
-          (c) =>
-            (c.participants[0] === user.id && c.participants[1] === currentUser.id) ||
-            (c.participants[0] === currentUser.id && c.participants[1] === user.id)
+        setMatchedUsers(likedUsers);
+      } catch (error) {
+        console.error('Failed to load data:', error);
+        // Fallback to Database
+        const allConversations = Database.getConversations();
+        const userConversations = allConversations.filter(
+          (c) => c.participants[0] === currentUser.id || c.participants[1] === currentUser.id
         );
-        return !hasConversation;
-      }) as User[];
+        setConversations(userConversations);
 
-    setMatchedUsers(matchedUsersList);
+        const users = Database.getUsers();
+        const userMap = new Map<string, User>();
+
+        userConversations.forEach((conv) => {
+          const otherUserId = conv.participants[0] === currentUser.id ? conv.participants[1] : conv.participants[0];
+          const user = users.find((u) => u.id === otherUserId);
+          if (user) {
+            userMap.set(otherUserId, user);
+          }
+        });
+
+        setOtherUsers(userMap);
+
+        const allMatches = Database.getMatches();
+        const likedMatches = allMatches.filter((m) => m.userId === currentUser.id && m.status === 'liked');
+
+        const likedUsers = likedMatches
+          .map((match) => users.find((u) => u.id === match.matchedUserId))
+          .filter((user) => {
+            if (!user) return false;
+            const hasConversation = userConversations.some(
+              (c) =>
+                (c.participants[0] === user.id && c.participants[1] === currentUser.id) ||
+                (c.participants[0] === currentUser.id && c.participants[1] === user.id)
+            );
+            return !hasConversation;
+          }) as User[];
+
+        setMatchedUsers(likedUsers);
+      }
+    };
+
+    loadData();
   }, [currentUser, router]);
 
-  const handleStartConversation = (userId: string) => {
+  const handleStartConversation = async (userId: string) => {
     if (!currentUser) return;
 
+    try {
+      // Try to create/get conversation via API
+      const response = await fetch('/api/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId1: currentUser.id,
+          userId2: userId,
+        }),
+      });
+
+      if (response.ok) {
+        const conversation = await response.json();
+        
+        // Add to conversations if not already there
+        const exists = conversations.some((c) => c.id === conversation.id);
+        if (!exists) {
+          setConversations([...conversations, conversation]);
+        }
+        
+        setSelectedConversation(conversation);
+        return;
+      }
+    } catch (error) {
+      console.error('Failed to create conversation via API:', error);
+    }
+
+    // Fallback to Database
     const participants: [string, string] = [currentUser.id, userId].sort() as [string, string];
     let conversation = conversations.find(
       (c) =>
