@@ -67,21 +67,17 @@ export async function POST(req: NextRequest) {
       RETURNING *
     `;
 
-    // If mutual like, create conversation
+    // When liking someone, create a conversation immediately
     if (status === 'liked') {
-      const reverseMatchResult = await sql`
-        SELECT * FROM matches 
-        WHERE user_id = ${matchedUserId} AND matched_user_id = ${userId} AND status = 'liked'
-      `;
-
-      if (reverseMatchResult.rows.length > 0) {
-        // Create conversation for mutual match
+      try {
         const convResult = await sql`
           INSERT INTO conversations (participants, created_at)
           VALUES (ARRAY[${userId}, ${matchedUserId}], NOW())
           ON CONFLICT DO NOTHING
           RETURNING *
         `;
+      } catch (convError) {
+        console.log('Conversation may already exist:', convError);
       }
     }
 
