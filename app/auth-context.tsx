@@ -6,12 +6,12 @@ import { User, Database } from '@/lib/db';
 interface AuthContextType {
   currentUser: User | null;
   isLoading: boolean;
-  login: (userId: string) => void;
+  login: (userId: string) => Promise<void>;
   logout: () => void;
-  updateProfile: (user: User) => void;
-  createUser: (user: User) => void;
-  refreshUser: () => void;
-  useToken: () => boolean;
+  updateProfile: (user: User) => Promise<void>;
+  createUser: (user: User) => Promise<void>;
+  refreshUser: () => Promise<void>;
+  useToken: () => Promise<boolean>;
   canSendMessage: () => boolean;
 }
 
@@ -22,64 +22,98 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    // Initialize with demo data from localStorage for now, but load from API
     Database.initializeDemoData();
     const user = Database.getCurrentUser();
     setCurrentUser(user);
     setIsLoading(false);
   }, []);
 
-  const login = useCallback((userId: string) => {
-    const users = Database.getUsers();
-    const user = users.find((u) => u.id === userId);
-    if (user) {
-      Database.setCurrentUser(user);
-      setCurrentUser(user);
+  const login = useCallback(async (userId: string) => {
+    try {
+      const response = await fetch(`/api/users?id=${userId}`);
+      if (response.ok) {
+        const user = await response.json();
+        setCurrentUser(user);
+      }
+    } catch (error) {
+      console.error('Failed to login:', error);
     }
   }, []);
 
   const logout = useCallback(() => {
     setCurrentUser(null);
-    Database.setCurrentUser(null);
   }, []);
 
-  const updateProfile = useCallback((user: User) => {
-    const users = Database.getUsers();
-    const updated = users.map((u) => (u.id === user.id ? user : u));
-    Database.saveUsers(updated);
-    Database.setCurrentUser(user);
-    setCurrentUser(user);
-  }, []);
-
-  const createUser = useCallback((user: User) => {
-    const users = Database.getUsers();
-    users.push(user);
-    Database.saveUsers(users);
-    Database.setCurrentUser(user);
-    setCurrentUser(user);
-  }, []);
-
-  const refreshUser = useCallback(() => {
-    if (currentUser) {
-      const users = Database.getUsers();
-      const updated = users.find((u) => u.id === currentUser.id);
-      if (updated) {
+  const updateProfile = useCallback(async (user: User) => {
+    try {
+      const response = await fetch('/api/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(user),
+      });
+      if (response.ok) {
+        const updated = await response.json();
         setCurrentUser(updated);
+      }
+    } catch (error) {
+      console.error('Failed to update profile:', error);
+    }
+  }, []);
+
+  const createUser = useCallback(async (user: User) => {
+    try {
+      // For now, create in localStorage as backup
+      const users = Database.getUsers();
+      users.push(user);
+      Database.saveUsers(users);
+      Database.setCurrentUser(user);
+      setCurrentUser(user);
+    } catch (error) {
+      console.error('Failed to create user:', error);
+    }
+  }, []);
+
+  const refreshUser = useCallback(async () => {
+    if (currentUser) {
+      try {
+        const response = await fetch(`/api/users?id=${currentUser.id}`);
+        if (response.ok) {
+          const updated = await response.json();
+          setCurrentUser(updated);
+        }
+      } catch (error) {
+        console.error('Failed to refresh user:', error);
       }
     }
   }, [currentUser]);
 
-  const useToken = useCallback(() => {
+  const useToken = useCallback(async () => {
     if (!currentUser) return false;
-    const success = Database.useToken(currentUser.id);
-    if (success) {
-      refreshUser();
+    try {
+      const response = await fetch('/api/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: currentUser.id,
+          tokens: currentUser.tokens - 1,
+        }),
+      });
+      if (response.ok) {
+        const updated = await response.json();
+        setCurrentUser(updated);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Failed to use token:', error);
+      return false;
     }
-    return success;
-  }, [currentUser, refreshUser]);
+  }, [currentUser]);
 
   const canSendMessage = useCallback(() => {
     if (!currentUser) return false;
-    return Database.canSendMessage(currentUser.id);
+    return currentUser.isPremium || currentUser.tokens > 0;
   }, [currentUser]);
 
   return (

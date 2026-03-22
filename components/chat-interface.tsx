@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { User, Message, Database } from '@/lib/db';
+import { User, Message } from '@/lib/db';
 import { useAuth } from '@/app/auth-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,68 +21,89 @@ export function ChatInterface({ currentUser, otherUser, conversationId }: ChatIn
   const [mediaPreview, setMediaPreview] = useState<{ url: string; type: 'image' | 'video' } | null>(null);
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const [localCurrentUser, setLocalCurrentUser] = useState<User>(currentUser);
+  const [loading, setLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Fetch messages from API
   useEffect(() => {
-    const allMessages = Database.getMessages();
-    const conversationMessages = allMessages.filter((m) => m.conversationId === conversationId);
-    setMessages(conversationMessages.sort((a, b) => a.createdAt - b.createdAt));
+    const fetchMessages = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch(
+          `/api/messages?conversationId=${conversationId}`
+        );
+        if (response.ok) {
+          const data = await response.json();
+          setMessages(data);
+          
+          // Mark as read
+          await fetch('/api/messages', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              conversationId,
+              userId: currentUser.id,
+            }),
+          });
+        }
+      } catch (error) {
+        console.error('Failed to fetch messages:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-    // Mark messages as read
-    const updated = allMessages.map((m) =>
-      m.conversationId === conversationId && m.receiverId === currentUser.id
-        ? { ...m, read: true }
-        : m
-    );
-    Database.saveMessages(updated);
+    fetchMessages();
+    const interval = setInterval(fetchMessages, 2000); // Poll every 2 seconds
+    return () => clearInterval(interval);
   }, [conversationId, currentUser.id]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!newMessage.trim() && !mediaPreview) return;
 
-    // Check if user can send message (has tokens or is premium)
-    if (!Database.canSendMessage(currentUser.id)) {
-      setShowUpgradePrompt(true);
-      return;
+    try {
+      // Send message via API
+      const response = await fetch('/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conversationId,
+          senderId: currentUser.id,
+          receiverId: otherUser.id,
+          content: newMessage,
+          mediaUrl: mediaPreview?.url,
+          mediaType: mediaPreview?.type,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        if (response.status === 403) {
+          setShowUpgradePrompt(true);
+          return;
+        }
+        throw new Error(error.error || 'Failed to send message');
+      }
+
+      const newMsg = await response.json();
+      setMessages([...messages, newMsg]);
+      setNewMessage('');
+      setMediaPreview(null);
+      refreshUser();
+
+      // Fetch updated user data
+      const userResponse = await fetch(`/api/users?id=${currentUser.id}`);
+      if (userResponse.ok) {
+        const updatedUser = await userResponse.json();
+        setLocalCurrentUser(updatedUser);
+      }
+    } catch (error) {
+      console.error('Failed to send message:', error);
     }
-
-    // Use a token (premium users don't consume tokens)
-    const tokenUsed = Database.useToken(currentUser.id);
-    if (!tokenUsed && !currentUser.isPremium) {
-      setShowUpgradePrompt(true);
-      return;
-    }
-
-    // Update local user state
-    const updatedUser = Database.getCurrentUser();
-    if (updatedUser) {
-      setLocalCurrentUser(updatedUser);
-    }
-
-    const message: Message = {
-      id: `msg-${Date.now()}`,
-      conversationId,
-      senderId: currentUser.id,
-      receiverId: otherUser.id,
-      content: newMessage,
-      mediaUrl: mediaPreview?.url,
-      mediaType: mediaPreview?.type,
-      createdAt: Date.now(),
-      read: false,
-    };
-
-    const allMessages = Database.getMessages();
-    allMessages.push(message);
-    Database.saveMessages(allMessages);
-
-    setMessages([...messages, message]);
-    setNewMessage('');
-    setMediaPreview(null);
-    refreshUser();
   };
 
   const handleFileSelect = (file: File, type: 'image' | 'video') => {
@@ -94,55 +115,83 @@ export function ChatInterface({ currentUser, otherUser, conversationId }: ChatIn
     reader.readAsDataURL(file);
   };
 
-  const handleUpgradePremium = () => {
-    Database.upgradeToPremium(currentUser.id);
-    const updatedUser = Database.getCurrentUser();
-    if (updatedUser) {
-      setLocalCurrentUser(updatedUser);
+  const handleUpgradePremium = async () => {
+    try {
+      const response = await fetch('/api/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: currentUser.id,
+          is_premium: true,
+        }),
+      });
+
+      if (response.ok) {
+        const updatedUser = await response.json();
+        setLocalCurrentUser(updatedUser);
+        refreshUser();
+        setShowUpgradePrompt(false);
+      }
+    } catch (error) {
+      console.error('Failed to upgrade:', error);
     }
-    refreshUser();
-    setShowUpgradePrompt(false);
   };
 
-  const handleBuyTokens = (amount: number) => {
-    Database.addTokens(currentUser.id, amount);
-    const updatedUser = Database.getCurrentUser();
-    if (updatedUser) {
-      setLocalCurrentUser(updatedUser);
+  const handleBuyTokens = async (amount: number) => {
+    try {
+      const response = await fetch('/api/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: currentUser.id,
+          tokens: localCurrentUser.tokens + amount,
+        }),
+      });
+
+      if (response.ok) {
+        const updatedUser = await response.json();
+        setLocalCurrentUser(updatedUser);
+        refreshUser();
+        setShowUpgradePrompt(false);
+      }
+    } catch (error) {
+      console.error('Failed to buy tokens:', error);
     }
-    refreshUser();
-    setShowUpgradePrompt(false);
   };
 
   return (
-    <div className="flex flex-col h-[600px] bg-white rounded-lg border border-gray-200 shadow-lg">
+    <div className="flex flex-col h-screen md:h-[600px] bg-white md:rounded-lg md:border md:border-gray-200 md:shadow-lg">
       {/* Header */}
-      <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-        <div>
-          <h2 className="font-bold text-lg text-gray-900">{otherUser.name}</h2>
-          <p className="text-sm text-gray-600">{otherUser.location}</p>
+      <div className="p-3 md:p-4 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10">
+        <div className="flex-1">
+          <h2 className="font-bold text-base md:text-lg text-gray-900">{otherUser.name}</h2>
+          <p className="text-xs md:text-sm text-gray-600">{otherUser.location}</p>
         </div>
         {/* Token/Premium indicator */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 ml-2">
           {localCurrentUser.isPremium ? (
             <span className="flex items-center gap-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white px-2 py-1 rounded-full text-xs font-medium">
               <Crown className="w-3 h-3" />
-              Premium
+              <span className="hidden sm:inline">Premium</span>
             </span>
           ) : (
             <span className="flex items-center gap-1 bg-amber-100 text-amber-800 px-2 py-1 rounded-full text-xs font-medium">
               <Coins className="w-3 h-3" />
-              {localCurrentUser.tokens} left
+              {localCurrentUser.tokens}
             </span>
           )}
         </div>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
-        {messages.length === 0 ? (
+      <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-3 md:space-y-4 bg-gray-50">
+        {loading ? (
           <div className="text-center py-8 text-gray-500">
-            <p>No messages yet. Start the conversation!</p>
+            <p className="text-sm md:text-base">Loading messages...</p>
+          </div>
+        ) : messages.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            <p className="text-sm md:text-base">No messages yet. Start the conversation!</p>
             {!currentUser.isPremium && (
               <p className="text-xs mt-2 text-amber-600">Each message costs 1 token</p>
             )}
@@ -154,7 +203,7 @@ export function ChatInterface({ currentUser, otherUser, conversationId }: ChatIn
               className={`flex ${msg.senderId === currentUser.id ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-xs px-4 py-2 rounded-2xl shadow-sm ${
+                className={`max-w-xs px-3 md:px-4 py-2 rounded-2xl shadow-sm text-sm md:text-base ${
                   msg.senderId === currentUser.id
                     ? 'bg-red-500 text-white rounded-br-sm'
                     : 'bg-white text-gray-900 rounded-bl-sm border border-gray-200'
@@ -174,7 +223,7 @@ export function ChatInterface({ currentUser, otherUser, conversationId }: ChatIn
                     className="max-w-full rounded-lg mb-2"
                   />
                 )}
-                {msg.content && <p className="text-sm">{msg.content}</p>}
+                {msg.content && <p>{msg.content}</p>}
                 <p
                   className={`text-xs mt-1 ${
                     msg.senderId === currentUser.id ? 'text-white/70' : 'text-gray-500'
@@ -189,14 +238,14 @@ export function ChatInterface({ currentUser, otherUser, conversationId }: ChatIn
         <div ref={messagesEndRef} />
       </div>
 
-        {/* No tokens warning */}
+      {/* No tokens warning */}
       {!localCurrentUser.isPremium && localCurrentUser.tokens === 0 && (
-        <div className="px-4 py-2 bg-amber-50 border-t border-amber-200 flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-amber-600" />
-          <p className="text-sm text-amber-800">You have no tokens left. Buy more to continue messaging.</p>
+        <div className="px-3 md:px-4 py-2 bg-amber-50 border-t border-amber-200 flex items-center gap-2 text-xs md:text-sm">
+          <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+          <p className="text-amber-800">No tokens. Buy more to message.</p>
           <button
             onClick={() => setShowUpgradePrompt(true)}
-            className="ml-auto text-sm font-medium text-amber-700 hover:text-amber-800 underline"
+            className="ml-auto font-medium text-amber-700 hover:text-amber-800 underline"
           >
             Get tokens
           </button>
@@ -204,20 +253,20 @@ export function ChatInterface({ currentUser, otherUser, conversationId }: ChatIn
       )}
 
       {/* Input Area */}
-      <div className="p-4 border-t border-gray-200 space-y-3 bg-white">
+      <div className="p-3 md:p-4 border-t border-gray-200 space-y-2 md:space-y-3 bg-white">
         {/* Media Preview */}
         {mediaPreview && (
-          <div className="relative inline-block">
+          <div className="relative inline-block max-w-full">
             {mediaPreview.type === 'image' ? (
               <img
                 src={mediaPreview.url}
                 alt="Preview"
-                className="max-w-xs rounded-lg"
+                className="max-w-full md:max-w-xs rounded-lg"
               />
             ) : (
               <video
                 src={mediaPreview.url}
-                className="max-w-xs rounded-lg"
+                className="max-w-full md:max-w-xs rounded-lg"
                 controls
               />
             )}
@@ -241,11 +290,11 @@ export function ChatInterface({ currentUser, otherUser, conversationId }: ChatIn
                 handleSendMessage();
               }
             }}
-            placeholder={localCurrentUser.isPremium ? "Type a message..." : `Type a message... (${localCurrentUser.tokens} tokens left)`}
-            className="flex-1"
+            placeholder={localCurrentUser.isPremium ? "Message..." : `Message... (${localCurrentUser.tokens})`}
+            className="flex-1 text-sm"
             disabled={!localCurrentUser.isPremium && localCurrentUser.tokens === 0}
           />
-          <label className="p-2 cursor-pointer hover:bg-gray-100 rounded-lg transition">
+          <label className="p-2 cursor-pointer hover:bg-gray-100 rounded-lg transition flex-shrink-0">
             <ImageIcon className="w-5 h-5 text-gray-600" />
             <input
               type="file"
@@ -258,7 +307,7 @@ export function ChatInterface({ currentUser, otherUser, conversationId }: ChatIn
               className="hidden"
             />
           </label>
-          <label className="p-2 cursor-pointer hover:bg-gray-100 rounded-lg transition">
+          <label className="p-2 cursor-pointer hover:bg-gray-100 rounded-lg transition flex-shrink-0">
             <Video className="w-5 h-5 text-gray-600" />
             <input
               type="file"
@@ -273,7 +322,7 @@ export function ChatInterface({ currentUser, otherUser, conversationId }: ChatIn
           </label>
           <Button
             onClick={handleSendMessage}
-            className="bg-red-500 hover:bg-red-600 text-white px-4"
+            className="bg-red-500 hover:bg-red-600 text-white px-3 md:px-4 flex-shrink-0"
             disabled={!localCurrentUser.isPremium && localCurrentUser.tokens === 0}
           >
             <Send className="w-4 h-4" />
