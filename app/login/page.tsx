@@ -35,16 +35,6 @@ export default function AuthPage() {
   const [regLocation, setRegLocation] = useState('');
   const [regError, setRegError] = useState('');
   const [showRegPassword, setShowRegPassword] = useState(false);
-  
-  // Password Reset state
-  const [resetEmail, setResetEmail] = useState('');
-  const [resetNewPassword, setResetNewPassword] = useState('');
-  const [resetConfirmPassword, setResetConfirmPassword] = useState('');
-  const [resetError, setResetError] = useState('');
-  const [resetSuccess, setResetSuccess] = useState('');
-  const [showResetPassword, setShowResetPassword] = useState(false);
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
-  
   const [isLoading, setIsLoading] = useState(false);
 
   // Redirect if already logged in
@@ -73,15 +63,12 @@ export default function AuthPage() {
     try {
       const user = Database.validatePassword(loginEmail, loginPassword);
       if (user) {
-        // Set current user in localStorage and auth context
-        Database.setCurrentUser(user);
-        await login(user.id);
+        login(user.id);
         router.push('/app');
       } else {
         setLoginError('Invalid email or password');
       }
-    } catch (error) {
-      console.error('[v0] Login error:', error);
+    } catch {
       setLoginError('An error occurred. Please try again.');
     } finally {
       setIsLoading(false);
@@ -159,70 +146,6 @@ export default function AuthPage() {
     }
   };
 
-  const handlePasswordReset = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setResetError('');
-    setResetSuccess('');
-    setIsLoading(true);
-
-    try {
-      // Validation
-      if (!resetEmail) {
-        setResetError('Please enter your email address');
-        setIsLoading(false);
-        return;
-      }
-
-      if (!resetNewPassword) {
-        setResetError('Please enter a new password');
-        setIsLoading(false);
-        return;
-      }
-
-      if (resetNewPassword !== resetConfirmPassword) {
-        setResetError('Passwords do not match');
-        setIsLoading(false);
-        return;
-      }
-
-      if (resetNewPassword.length < 6) {
-        setResetError('Password must be at least 6 characters');
-        setIsLoading(false);
-        return;
-      }
-
-      // Find user by email
-      const user = Database.findUserByEmail(resetEmail);
-      if (!user) {
-        setResetError('No account found with this email address');
-        setIsLoading(false);
-        return;
-      }
-
-      // Update password
-      const users = Database.getUsers();
-      const userIndex = users.findIndex(u => u.email.toLowerCase() === resetEmail.toLowerCase());
-      if (userIndex !== -1) {
-        users[userIndex] = { ...users[userIndex], password: resetNewPassword };
-        Database.saveUsers(users);
-        setResetSuccess('Password reset successfully! Please log in with your new password.');
-        
-        // Clear form after 2 seconds
-        setTimeout(() => {
-          setResetEmail('');
-          setResetNewPassword('');
-          setResetConfirmPassword('');
-          setResetSuccess('');
-        }, 2000);
-      }
-    } catch (error) {
-      console.error('[v0] Password reset error:', error);
-      setResetError('An error occurred. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-red-50 via-rose-50 to-pink-50 flex flex-col">
       {/* Header */}
@@ -259,15 +182,12 @@ export default function AuthPage() {
           <Card className="bg-white shadow-xl border-0">
             <Tabs defaultValue="login" className="w-full">
               <CardHeader className="pb-4">
-                <TabsList className="grid w-full grid-cols-3">
-                  <TabsTrigger value="login" className="data-[state=active]:bg-red-500 data-[state=active]:text-white text-xs md:text-sm">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="login" className="data-[state=active]:bg-red-500 data-[state=active]:text-white">
                     Login
                   </TabsTrigger>
-                  <TabsTrigger value="register" className="data-[state=active]:bg-red-500 data-[state=active]:text-white text-xs md:text-sm">
+                  <TabsTrigger value="register" className="data-[state=active]:bg-red-500 data-[state=active]:text-white">
                     Register
-                  </TabsTrigger>
-                  <TabsTrigger value="reset" className="data-[state=active]:bg-red-500 data-[state=active]:text-white text-xs md:text-sm">
-                    Reset
                   </TabsTrigger>
                 </TabsList>
               </CardHeader>
@@ -484,91 +404,6 @@ export default function AuthPage() {
                     >
                       {isLoading ? 'Creating Account...' : 'Create Account'}
                     </Button>
-                  </form>
-                </CardContent>
-              </TabsContent>
-
-              {/* Password Reset Tab */}
-              <TabsContent value="reset" className="mt-0">
-                <CardContent>
-                  <form onSubmit={handlePasswordReset} className="space-y-4">
-                    <div className="bg-blue-50 p-3 rounded-lg border border-blue-200 mb-4">
-                      <p className="text-sm text-blue-800">Enter your email and new password to reset your account.</p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="reset-email">Email Address *</Label>
-                      <Input
-                        id="reset-email"
-                        type="email"
-                        placeholder="your@email.com"
-                        value={resetEmail}
-                        onChange={(e) => setResetEmail(e.target.value)}
-                        required
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="reset-password">New Password *</Label>
-                      <div className="relative">
-                        <Input
-                          id="reset-password"
-                          type={showResetPassword ? 'text' : 'password'}
-                          placeholder="Min 6 characters"
-                          value={resetNewPassword}
-                          onChange={(e) => setResetNewPassword(e.target.value)}
-                          required
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowResetPassword(!showResetPassword)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                        >
-                          {showResetPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="reset-confirm">Confirm Password *</Label>
-                      <div className="relative">
-                        <Input
-                          id="reset-confirm"
-                          type={showResetConfirm ? 'text' : 'password'}
-                          placeholder="Repeat password"
-                          value={resetConfirmPassword}
-                          onChange={(e) => setResetConfirmPassword(e.target.value)}
-                          required
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowResetConfirm(!showResetConfirm)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                        >
-                          {showResetConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </button>
-                      </div>
-                    </div>
-
-                    {resetError && (
-                      <p className="text-sm text-red-600 bg-red-50 p-2 rounded">{resetError}</p>
-                    )}
-
-                    {resetSuccess && (
-                      <p className="text-sm text-green-600 bg-green-50 p-2 rounded">{resetSuccess}</p>
-                    )}
-
-                    <Button
-                      type="submit"
-                      className="w-full bg-blue-500 hover:bg-blue-600 text-white"
-                      disabled={isLoading}
-                    >
-                      {isLoading ? 'Resetting...' : 'Reset Password'}
-                    </Button>
-
-                    <p className="text-xs text-gray-500 text-center mt-4">
-                      Remember your password? <a href="#login" className="text-blue-600 hover:underline">Sign in</a>
-                    </p>
                   </form>
                 </CardContent>
               </TabsContent>
