@@ -17,6 +17,7 @@ export default function AppHome() {
 
   useEffect(() => {
     if (!isLoading && !currentUser) {
+      console.log('[v0] No current user, redirecting to login');
       router.push('/login');
     }
   }, [currentUser, isLoading, router]);
@@ -60,15 +61,18 @@ export default function AppHome() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: currentUser.id,
-          is_premium: true,
+          isPremium: true,
         }),
       });
       if (response.ok) {
-        refreshUser();
+        console.log('[v0] Premium upgrade successful');
+        await refreshUser();
         setShowPremiumModal(false);
+      } else {
+        console.error('[v0] Premium upgrade failed:', response.status);
       }
     } catch (error) {
-      console.error('Failed to upgrade:', error);
+      console.error('[v0] Failed to upgrade:', error);
     }
   };
 
@@ -83,11 +87,14 @@ export default function AppHome() {
         }),
       });
       if (response.ok) {
-        refreshUser();
+        console.log('[v0] Tokens purchase successful');
+        await refreshUser();
         setShowPremiumModal(false);
+      } else {
+        console.error('[v0] Token purchase failed:', response.status);
       }
     } catch (error) {
-      console.error('Failed to buy tokens:', error);
+      console.error('[v0] Failed to buy tokens:', error);
     }
   };
 

@@ -191,7 +191,7 @@ export default function AuthPage() {
         return;
       }
 
-      // Find user by email
+      // Find user by email locally first to validate
       const user = Database.findUserByEmail(resetEmail);
       if (!user) {
         setResetError('No account found with this email address');
@@ -199,21 +199,58 @@ export default function AuthPage() {
         return;
       }
 
-      // Update password
-      const users = Database.getUsers();
-      const userIndex = users.findIndex(u => u.email.toLowerCase() === resetEmail.toLowerCase());
-      if (userIndex !== -1) {
-        users[userIndex] = { ...users[userIndex], password: resetNewPassword };
-        Database.saveUsers(users);
-        setResetSuccess('Password reset successfully! Please log in with your new password.');
-        
-        // Clear form after 2 seconds
-        setTimeout(() => {
-          setResetEmail('');
-          setResetNewPassword('');
-          setResetConfirmPassword('');
-          setResetSuccess('');
-        }, 2000);
+      // Update password using API
+      try {
+        const response = await fetch('/api/password-reset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: resetEmail,
+            newPassword: resetNewPassword,
+          }),
+        });
+
+        if (response.ok) {
+          // Also update in local database as fallback
+          const users = Database.getUsers();
+          const userIndex = users.findIndex(u => u.email.toLowerCase() === resetEmail.toLowerCase());
+          if (userIndex !== -1) {
+            users[userIndex] = { ...users[userIndex], password: resetNewPassword };
+            Database.saveUsers(users);
+          }
+
+          setResetSuccess('Password reset successfully! Please log in with your new password.');
+          
+          // Clear form after 2 seconds
+          setTimeout(() => {
+            setResetEmail('');
+            setResetNewPassword('');
+            setResetConfirmPassword('');
+            setResetSuccess('');
+          }, 2000);
+        } else {
+          const errorData = await response.json();
+          setResetError(errorData.error || 'Failed to reset password');
+        }
+      } catch (apiError) {
+        console.error('[v0] API error during password reset:', apiError);
+        // Fallback to local database update
+        const users = Database.getUsers();
+        const userIndex = users.findIndex(u => u.email.toLowerCase() === resetEmail.toLowerCase());
+        if (userIndex !== -1) {
+          users[userIndex] = { ...users[userIndex], password: resetNewPassword };
+          Database.saveUsers(users);
+          setResetSuccess('Password reset successfully! Please log in with your new password.');
+          
+          setTimeout(() => {
+            setResetEmail('');
+            setResetNewPassword('');
+            setResetConfirmPassword('');
+            setResetSuccess('');
+          }, 2000);
+        } else {
+          setResetError('An error occurred. Please try again.');
+        }
       }
     } catch (error) {
       console.error('[v0] Password reset error:', error);
