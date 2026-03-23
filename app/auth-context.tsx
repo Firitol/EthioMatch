@@ -81,9 +81,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (response.ok) {
           const updated = await response.json();
           setCurrentUser(updated);
+          Database.setCurrentUser(updated);
+        } else {
+          // Fallback: load from local database
+          const users = Database.getUsers();
+          const user = users.find(u => u.id === currentUser.id);
+          if (user) {
+            setCurrentUser(user);
+            Database.setCurrentUser(user);
+          }
         }
       } catch (error) {
-        console.error('Failed to refresh user:', error);
+        console.error('[v0] Failed to refresh user:', error);
+        // Fallback: load from local database
+        const users = Database.getUsers();
+        const user = users.find(u => u.id === currentUser.id);
+        if (user) {
+          setCurrentUser(user);
+          Database.setCurrentUser(user);
+        }
       }
     }
   }, [currentUser]);
