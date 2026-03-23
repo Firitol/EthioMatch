@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Find user by email
+    // Find user by email and update password
     try {
       const userResult = await sql`
         SELECT * FROM users WHERE LOWER(email) = LOWER(${email})
@@ -38,21 +38,29 @@ export async function POST(request: NextRequest) {
       // Update password
       const updateResult = await sql`
         UPDATE users 
-        SET password = ${newPassword}, updated_at = ${Date.now()}
+        SET password = ${newPassword}, updated_at = NOW()
         WHERE id = ${user.id}
         RETURNING id, email, name
       `;
 
+      if (updateResult.rows.length === 0) {
+        return NextResponse.json(
+          { error: 'Failed to update password' },
+          { status: 500 }
+        );
+      }
+
+      console.log('[v0] Password reset successful for:', email);
       return NextResponse.json({
         message: 'Password reset successfully',
         user: updateResult.rows[0],
       });
     } catch (dbError) {
       console.error('[v0] Database error in password reset:', dbError);
-      // If database fails, this is a network/connection error
+      // Return service unavailable for database errors
       return NextResponse.json(
-        { error: 'Database connection error. Using local reset instead.' },
-        { status: 500 }
+        { error: 'Database service temporarily unavailable. Please try again later.' },
+        { status: 503 }
       );
     }
   } catch (error) {
