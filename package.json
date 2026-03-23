@@ -84,3 +84,6 @@
     "onlyBuiltDependencies": ["sharp", "bufferutil"]
   }
 }
+"pnpm": {
+  "onlyBuiltDependencies": ["sharp", "bufferutil"]
+}
