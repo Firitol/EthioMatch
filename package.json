@@ -63,7 +63,7 @@
     "zod": "^3.24.1"
     {
   "pnpm": {
-    "onlyBuiltDependencies": ["sharp", "bufferutil"]
+    "onlyBuiltDependencies": "sharp", "bufferutil"
   }
 }
   },
